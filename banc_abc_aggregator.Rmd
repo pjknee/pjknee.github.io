@@ -1,0 +1,257 @@
+---
+title: "Banc_Abc"
+author: "Patrick Knee"
+date: "12/20/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE,cache=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# {.tabset}
+
+
+
+```{r Import Libraries and Set Options, include=FALSE, warning = FALSE}
+library(tidyverse)
+library(lubridate)
+library(plotly)
+library(scales)
+library(kableExtra)
+
+
+options(stringsAsFactors = FALSE, scipen = 999)
+```
+
+```{r read in data, include=FALSE, warning = FALSE}
+ip_list <- read.csv("C:\\Users\\pjkne\\Documents\\Work\\shape\\project\\Aggregator IP List.csv")
+
+login_transactions <- read.csv("C:\\Users\\pjkne\\Documents\\Work\\shape\\project\\Login Transactions.csv")
+
+
+```
+
+```{r Data cleaning, include=FALSE, warning = FALSE}
+#Drop column 'X'
+ip_list$X <- NULL
+#join aggegator value
+login_transactions <- left_join(login_transactions, ip_list, by = c("IP" = "ip"))
+#convert epoch to minutes
+login_transactions <- mutate(login_transactions, minutes = timestamp / 60)
+
+#Convert NA Aggregator values to 'unkown'.
+login_transactions$Aggregator <- as.character(login_transactions$Aggregator)
+
+login_transactions$Aggregator[is.na(login_transactions$Aggregator)] <- "unknown"
+```
+
+
+```{r Which aggregators are accessing Banc ABC’s systems?, include=FALSE, warning = FALSE}
+agg_count <- count(login_transactions, Aggregator)
+
+agg_count_bar <- plot_ly(agg_count, 
+                         x = ~Aggregator,
+                         y = ~n, type = "bar") %>%
+  layout(title = "Which aggregators are accessing Banc ABC’s systems?")
+```
+
+
+```{r unique users by aggregator, include=FALSE, warning = FALSE}
+users <- select(login_transactions, "Aggregator", "AccountName")
+
+users <- distinct(users)
+
+user_count <- count(users, Aggregator)
+colnames(user_count)[2] <- "Unique_AccountNames"
+
+  
+user_count_bar <- plot_ly(user_count, 
+                         x = ~Aggregator,
+                         y = ~Unique_AccountNames, type = "bar") %>%
+  layout(title = "How many Accounts per Aggregator?")
+rm(users)
+
+```
+
+
+```{r Success_fail table, include=FALSE, warning = FALSE}
+
+#Count success and failures by Aggregator
+agg_success_fail <- login_transactions %>%
+  group_by(Aggregator) %>%
+  distinct() %>%
+  count(LoginSuccess)
+
+#Spread Success Fail to own columns by aggregator
+agg_success_fail <- spread(agg_success_fail, LoginSuccess, n)
+
+
+
+
+#convert NAs to 0 
+agg_success_fail[is.na(agg_success_fail)] <- 0
+
+#create total column
+agg_success_fail <- mutate(agg_success_fail, total = Fail + Success)
+
+#create success percentage column
+agg_success_fail <- mutate(agg_success_fail, success_rate =  Success/total)
+
+#conver to percent
+agg_success_fail$success_rate <- paste(round(agg_success_fail$success_rate * 100, digits = 1), "%", sep ="") 
+
+```
+
+```{r, include=FALSE, warning = FALSE}
+#create stacked bar chart
+agg_success_fail_chart <- plot_ly(agg_success_fail, x = ~Aggregator, y = ~Fail, type = 'bar', name = 'Failures') %>%
+  add_trace(y = ~Success, name = 'Successes') %>%
+  layout(yaxis = list(title = 'Count'), barmode = 'stack')%>%
+  layout(title = 'Success and Failure Rates by Aggregator')
+
+```
+
+
+```{r, warning= FALSE}
+success_rates <-  select(agg_success_fail, "Aggregator", "success_rate")
+
+success_rates <- success_rates[order(success_rates$success_rate),]
+success_rates <- as.data.frame(success_rates)
+
+
+```
+
+```{r convert time, warning= FALSE}
+#convert to date
+login_transactions$dtg <- as.POSIXct(login_transactions$timestamp/1000,
+                                     origin = "1970-01-01",
+                                     tz = "UTC")
+#round to nearest minute
+login_transactions$dtg <- round_date(login_transactions$dtg,
+                                     unit = "1 minute")
+
+```
+
+```{r create frequency chart, warning=FALSE}
+#identifies five minute chunks then counts occurence of 'Aggregator'
+login_transactions <- login_transactions[order(login_transactions$Aggregator), ]
+chunks <- ifelse(minute(login_transactions$dtg) < 10, 0, 10)
+login_transactions$datesHH <- login_transactions$dtg
+minute(login_transactions$datesHH) <- chunks; second(login_transactions$datesHH) <- 0
+
+login_time <- data.frame(table(login_transactions[ ,c(6,9)]))
+
+
+login_frequency <- plot_ly(login_time, x = ~datesHH, y = ~Freq, color = ~Aggregator) %>%
+  add_lines()
+
+
+#calculate averages, mins, and maxes
+login_avg <- login_time %>% 
+  group_by(Aggregator) %>% 
+  summarise (mean_count = mean(Freq), min_count = min(Freq), max_count = max(Freq))
+
+user_count_bar <- plot_ly(user_count, 
+                         x = ~Aggregator,
+                         y = ~Unique_AccountNames, type = "bar") %>%
+  layout(title = "How many Accounts per Aggregator?")
+  
+login_time_box <- plot_ly(login_time, 
+             y = ~Freq, 
+             color = ~Aggregator, 
+             type = "box")
+
+```
+
+
+```{r, warning= FALSE}
+#gather stats
+
+login_transaction_stats <- left_join(agg_success_fail, agg_count, by = "Aggregator")
+login_transaction_stats <- left_join(login_transaction_stats, login_avg, by = "Aggregator")
+login_transaction_stats$n <- NULL
+
+colnames(login_transaction_stats) <- c("Aggregator", "Fail", "Success", "total", "success_rate", "mean_per_10min", "min_per_10min", "max_per_10min")
+```
+
+```{r Unknown IPs, warnings = FALSE}
+unknowns <- select(login_transactions, "IP", "Aggregator")
+unknowns <- filter(unknowns, Aggregator == "unknown")
+unknowns <- unique(unknowns)
+
+```
+
+## Aggregators
+
+Below is a graph representing the amount of transactions by Aggregator.
+
+```{r Aggregator count, warning=FALSE}
+
+agg_count_bar
+
+```
+
+## User Count
+
+Below is a graph representing the amount of users by Aggregator.
+
+```{r User Counts, warning= FALSE}
+
+user_count_bar
+
+```
+
+## Success Rates
+
+Below is a graph representing the rate of login successes and failures as well as table showing the success rates of each Aggregator.
+
+```{r Success Rates, warning=FALSE,  results='asis'}
+agg_success_fail_chart
+
+success_rates %>%
+  knitr::kable() %>%
+  kableExtra::kable_styling()
+  
+
+```
+
+## Login Rates
+
+The chart below shows the login rates per 10 minute interval by Aggregator. The table shows statistics about Banc ABC's login transactions.
+
+```{r, warning= FALSE}
+login_frequency
+login_transaction_stats %>%
+  knitr::kable() %>%
+  kableExtra::kable_styling()
+
+```
+
+## Recomendations and Observations
+
+**What would be the impact of the CISO’s proposal to limit each aggregator to 1 login per account per 10 min interval?**
+
+Decreasing the login rate may improve success rates but it may slow down traffic significantly. 
+
+
+
+**Unknown IPs**
+
+During the course of this project I noticed several IPs that are not associated with any known Aggregators. These unknown IPs have a high rate of successful attempts
+
+```{r, warning= FALSE}
+
+unknowns %>%
+  knitr::kable() %>%
+  kableExtra::kable_styling()
+
+```
+
+
+## Contact Information
+
+1. Analyst: Patrick Knee
+3. Email: pjknee@gmail.com
+3. Github: [pjknee](https://github.com/pjknee/pjknee.github.io)
+
