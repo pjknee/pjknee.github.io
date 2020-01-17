@@ -182,6 +182,25 @@ unknowns <- unique(unknowns)
 
 ```
 
+## Introduction
+
+Banc ABC requested that we analyze their login transactions from 28-29 October 2018.
+
+We were provided two .csv files. One contained 4,092,253 login transactions the other provided the Aggregators associated with the IPs.
+
+These were the CISO's primary questions.
+
+1.	Which aggregators are accessing Banc ABC’s systems?
+2.	How much volume are the aggregators sending?
+3.	How many individual user accounts are being accessed by the aggregators?
+4.	What is the login success rate of these aggregators and is this in line with what would be expected in your opinion?
+5.	What is the average number of transactions each aggregator sends per 10min interval?
+6.	What is the maximum number of transactions each aggregator sends per 10min interval?
+7.	What would be the impact of the CISO’s proposal to limit each aggregator to 1 login per account per 10 min interval?
+
+
+
+
 ## Aggregators
 
 Below is a graph representing the amount of transactions by Aggregator.
